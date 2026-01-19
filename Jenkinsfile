@@ -1,5 +1,11 @@
 pipeline {
-  agent any
+  agent {
+    docker {
+      image 'node:20-bullseye'
+      args  '-v /var/run/docker.sock:/var/run/docker.sock'
+      reuseNode true
+    }
+  }
 
   environment {
     COMPOSE_FILE = "ci/compose/docker-compose.ci.yml"
@@ -10,12 +16,25 @@ pipeline {
       steps { checkout scm }
     }
 
+    stage('Install Tools (docker + compose + curl)') {
+      steps {
+        sh '''
+          set -eux
+          apt-get update
+          apt-get install -y docker.io docker-compose-plugin curl
+          node -v
+          npm -v
+          docker version
+          docker compose version
+        '''
+      }
+    }
+
     stage('Unit Tests') {
       steps {
         sh '''
           set -eux
 
-          # Frontend tests (if your package.json has "test")
           if [ -f apps/checkout/package.json ]; then
             cd apps/checkout
             npm ci
@@ -23,7 +42,6 @@ pipeline {
             cd -
           fi
 
-          # API tests (if exists)
           if [ -f api/package.json ]; then
             cd api
             npm ci
@@ -31,7 +49,6 @@ pipeline {
             cd -
           fi
 
-          # ML tests (if pytest exists)
           if [ -f ml/requirements.txt ]; then
             python3 -V || true
           fi
@@ -49,7 +66,6 @@ pipeline {
           docker compose -f ${COMPOSE_FILE} up -d
 
           chmod +x ci/scripts/wait-for-http.sh ci/scripts/smoke-test.sh
-
           ci/scripts/wait-for-http.sh http://localhost:8081/ 60
           ci/scripts/smoke-test.sh
 
@@ -62,9 +78,7 @@ pipeline {
 
   post {
     always {
-      sh '''
-        docker compose -f ${COMPOSE_FILE} ps || true
-      '''
+      sh 'docker compose -f ${COMPOSE_FILE} ps || true'
     }
   }
 }
