@@ -1,8 +1,9 @@
 pipeline {
   agent {
     docker {
-      image 'node:20-bullseye'
-      args  '-v /var/run/docker.sock:/var/run/docker.sock'
+      // Includes docker CLI already; no apt-get required
+      image 'docker:27-cli'
+      args  '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
       reuseNode true
     }
   }
@@ -16,12 +17,17 @@ pipeline {
       steps { checkout scm }
     }
 
-    stage('Install Tools (docker + compose + curl)') {
+    stage('Install Node + Compose') {
       steps {
         sh '''
           set -eux
-          apt-get update
-          apt-get install -y docker.io docker-compose-plugin curl
+
+          # Install node + npm (alpine)
+          apk add --no-cache nodejs npm curl
+
+          # Install docker compose plugin (alpine package)
+          apk add --no-cache docker-cli-compose
+
           node -v
           npm -v
           docker version
@@ -48,19 +54,14 @@ pipeline {
             npm test || true
             cd -
           fi
-
-          if [ -f ml/requirements.txt ]; then
-            python3 -V || true
-          fi
         '''
       }
     }
 
-    stage('Build & Deploy with Docker Compose') {
+    stage('Build & Deploy') {
       steps {
         sh '''
           set -eux
-
           docker compose -f ${COMPOSE_FILE} down || true
           docker compose -f ${COMPOSE_FILE} build --no-cache
           docker compose -f ${COMPOSE_FILE} up -d
@@ -78,7 +79,7 @@ pipeline {
 
   post {
     always {
-      sh 'docker compose -f ${COMPOSE_FILE} ps || true'
+      sh 'echo "Build finished"'
     }
   }
 }
