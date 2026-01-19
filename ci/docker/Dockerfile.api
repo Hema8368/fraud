@@ -1,0 +1,12 @@
+FROM node:20-alpine
+WORKDIR /app
+
+COPY api/package*.json ./
+RUN npm ci
+
+COPY api/ ./
+ENV PORT=5000
+EXPOSE 5000
+
+# If your start file is different, update here
+CMD ["node", "server.js"]
