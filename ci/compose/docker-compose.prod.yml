@@ -4,15 +4,26 @@ services:
     ports:
       - "5000:5000"
     restart: always
+
   ml:
     image: hema8368/cfd-ml:${TAG}
     ports:
       - "8000:8000"
     restart: always
-  ui:
-    image: hema8368/cfd-ui:${TAG}
+
+  ui-checkout:
+    image: hema8368/cfd-ui-checkout:${TAG}
     ports:
       - "8081:8080"
+    depends_on:
+      - api
+      - ml
+    restart: always
+
+  ui-admin:
+    image: hema8368/cfd-ui-admin:${TAG}
+    ports:
+      - "8082:8080"
     depends_on:
       - api
       - ml
