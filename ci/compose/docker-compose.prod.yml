@@ -1,0 +1,19 @@
+services:
+  api:
+    image: hema8368/cfd-api:${TAG}
+    ports:
+      - "5000:5000"
+    restart: always
+  ml:
+    image: hema8368/cfd-ml:${TAG}
+    ports:
+      - "8000:8000"
+    restart: always
+  ui:
+    image: hema8368/cfd-ui:${TAG}
+    ports:
+      - "8081:8080"
+    depends_on:
+      - api
+      - ml
+    restart: always
