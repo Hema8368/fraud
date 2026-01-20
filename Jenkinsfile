@@ -1,15 +1,15 @@
 pipeline {
-  agent {
-    docker {
-      // Includes docker CLI already; no apt-get required
-      image 'docker:27-cli'
-      args  '-u root:root -v /var/run/docker.sock:/var/run/docker.sock'
-      reuseNode true
-    }
-  }
+  agent any
 
   environment {
-    COMPOSE_FILE = "ci/compose/docker-compose.ci.yml"
+    DOCKERHUB_API = "yourdockerhub/cfd-api"
+    DOCKERHUB_ML  = "yourdockerhub/cfd-ml"
+    DOCKERHUB_UI  = "yourdockerhub/cfd-ui"
+
+    PROD_HOST = "PROD_PUBLIC_IP"
+    PROD_USER = "ubuntu"
+    PROD_DIR  = "/opt/couponfraud"
+    PROD_COMPOSE = "ci/compose/docker-compose.prod.yml"
   }
 
   stages {
@@ -17,69 +17,58 @@ pipeline {
       steps { checkout scm }
     }
 
-    stage('Install Node + Compose') {
+    stage('Build Docker Images') {
       steps {
         sh '''
           set -eux
+          TAG=${GIT_COMMIT:0:7}
 
-          # Install node + npm (alpine)
-          apk add --no-cache nodejs npm curl
-
-          # Install docker compose plugin (alpine package)
-          apk add --no-cache docker-cli-compose
-
-          node -v
-          npm -v
-          docker version
-          docker compose version
+          docker build -f ci/docker/Dockerfile.api -t ${DOCKERHUB_API}:${TAG} .
+          docker build -f ci/docker/Dockerfile.ml  -t ${DOCKERHUB_ML}:${TAG} .
+          docker build -f ci/docker/Dockerfile.tomcat-ui -t ${DOCKERHUB_UI}:${TAG} --build-arg APP_PATH=apps/checkout .
         '''
       }
     }
 
-    stage('Unit Tests') {
+    stage('Push to Docker Hub') {
       steps {
-        sh '''
-          set -eux
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          sh '''
+            set -eux
+            TAG=${GIT_COMMIT:0:7}
 
-          if [ -f apps/checkout/package.json ]; then
-            cd apps/checkout
-            npm ci
-            npm test || true
-            cd -
-          fi
+            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
 
-          if [ -f api/package.json ]; then
-            cd api
-            npm ci
-            npm test || true
-            cd -
-          fi
-        '''
+            docker push ${DOCKERHUB_API}:${TAG}
+            docker push ${DOCKERHUB_ML}:${TAG}
+            docker push ${DOCKERHUB_UI}:${TAG}
+          '''
+        }
       }
     }
 
-    stage('Build & Deploy') {
+    stage('Deploy to Production EC2') {
       steps {
-        sh '''
-          set -eux
-          docker compose -f ${COMPOSE_FILE} down || true
-          docker compose -f ${COMPOSE_FILE} build --no-cache
-          docker compose -f ${COMPOSE_FILE} up -d
+        sshagent(credentials: ['prod-ssh-key']) {
+          sh '''
+            set -eux
+            TAG=${GIT_COMMIT:0:7}
 
-          chmod +x ci/scripts/wait-for-http.sh ci/scripts/smoke-test.sh
-          ci/scripts/wait-for-http.sh http://localhost:8081/ 60
-          ci/scripts/smoke-test.sh
+            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} "mkdir -p ${PROD_DIR}"
 
-          docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
-          echo "OPEN UI: http://<EC2-PUBLIC-IP>:8081/"
-        '''
+            scp -o StrictHostKeyChecking=no ${PROD_COMPOSE} ${PROD_USER}@${PROD_HOST}:${PROD_DIR}/docker-compose.yml
+
+            ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} "
+              set -eux
+              cd ${PROD_DIR}
+              export TAG=${TAG}
+              docker compose pull
+              docker compose up -d
+              docker ps
+            "
+          '''
+        }
       }
-    }
-  }
-
-  post {
-    always {
-      sh 'echo "Build finished"'
     }
   }
 }
