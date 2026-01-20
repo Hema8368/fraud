@@ -1,21 +1,26 @@
 services:
   api:
-    image: yourdockerhub/cfd-api:${TAG}
+    build:
+      context: .
+      dockerfile: ci/docker/Dockerfile.api
     ports:
       - "5000:5000"
-    restart: always
 
   ml:
-    image: yourdockerhub/cfd-ml:${TAG}
+    build:
+      context: .
+      dockerfile: ci/docker/Dockerfile.ml
     ports:
       - "8000:8000"
-    restart: always
 
   ui:
-    image: yourdockerhub/cfd-ui:${TAG}
+    build:
+      context: .
+      dockerfile: ci/docker/Dockerfile.tomcat-ui
+      args:
+        APP_PATH: apps/checkout
     ports:
       - "8081:8080"
     depends_on:
       - api
       - ml
-    restart: always
