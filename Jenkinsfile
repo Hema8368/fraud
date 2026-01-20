@@ -1,6 +1,10 @@
 pipeline {
   agent any
 
+  options {
+    skipDefaultCheckout(true)
+  }
+
   environment {
     DOCKERHUB_USERNAME = "hsindhuja"
 
@@ -11,7 +15,6 @@ pipeline {
     CI_COMPOSE   = "ci/compose/docker-compose.ci.yml"
     PROD_COMPOSE = "ci/compose/docker-compose.prod.yml"
 
-    // Production server details
     PROD_HOST = "34.235.165.176"
     PROD_USER = "ubuntu"
     PROD_DIR  = "/opt/couponfraud"
@@ -19,8 +22,17 @@ pipeline {
 
   stages {
     stage('Checkout') {
+      steps { checkout scm }
+    }
+
+    stage('Set TAG') {
       steps {
-        checkout scm
+        sh '''#!/usr/bin/env sh
+          set -eu
+          TAG=$(echo "$GIT_COMMIT" | cut -c1-7)
+          echo "$TAG" > .tag
+          echo "TAG=$TAG"
+        '''
       }
     }
 
@@ -28,8 +40,7 @@ pipeline {
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
-          TAG=$(echo "$GIT_COMMIT" | cut -c1-7)
-          echo "TAG=$TAG"
+          TAG=$(cat .tag)
 
           docker build -f ci/docker/Dockerfile.api -t ${DOCKERHUB_API}:${TAG} .
           docker build -f ci/docker/Dockerfile.ml  -t ${DOCKERHUB_ML}:${TAG} .
@@ -42,21 +53,20 @@ pipeline {
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
-
           chmod +x ci/scripts/wait-for-http.sh ci/scripts/smoke-test.sh
 
-          # Start services for CI test (build from source)
           docker compose -f ${CI_COMPOSE} down || true
           docker compose -f ${CI_COMPOSE} up -d --build
 
-          # Wait for UI
-          ci/scripts/wait-for-http.sh http://localhost:8081/ 60
+          echo "=== Running containers ==="
+          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-          # Smoke test
+          ci/scripts/wait-for-http.sh http://localhost:8081/ 60
           ci/scripts/smoke-test.sh
 
-          # Cleanup
-          docker compose -f ${CI_COMPOSE} down
+          # NOTE:
+          # Do NOT bring down here if you want to access UI manually after pipeline starts.
+          # Cleanup is handled in post actions.
         '''
       }
     }
@@ -66,7 +76,7 @@ pipeline {
         withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
           sh '''#!/usr/bin/env sh
             set -eu
-            TAG=$(echo "$GIT_COMMIT" | cut -c1-7)
+            TAG=$(cat .tag)
 
             echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
 
@@ -83,13 +93,11 @@ pipeline {
         sshagent(credentials: ['prod-ssh-key']) {
           sh '''#!/usr/bin/env sh
             set -eu
-            TAG=$(echo "$GIT_COMMIT" | cut -c1-7)
+            TAG=$(cat .tag)
 
-            # Copy prod compose file to server
             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} "mkdir -p ${PROD_DIR}"
             scp -o StrictHostKeyChecking=no ${PROD_COMPOSE} ${PROD_USER}@${PROD_HOST}:${PROD_DIR}/docker-compose.yml
 
-            # Deploy (pull new images + restart)
             ssh -o StrictHostKeyChecking=no ${PROD_USER}@${PROD_HOST} "
               set -eu
               cd ${PROD_DIR}
