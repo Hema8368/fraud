@@ -2,11 +2,12 @@ pipeline {
   agent any
 
   options {
+    // prevents Jenkins from doing an automatic checkout in addition to our Checkout stage
     skipDefaultCheckout(true)
   }
 
   environment {
-    DOCKERHUB_USERNAME = "hsindhuja"
+    DOCKERHUB_USERNAME = "hsindhuja"   // must be lowercase
 
     DOCKERHUB_API = "${DOCKERHUB_USERNAME}/cfd-api"
     DOCKERHUB_ML  = "${DOCKERHUB_USERNAME}/cfd-ml"
@@ -15,6 +16,7 @@ pipeline {
     CI_COMPOSE   = "ci/compose/docker-compose.ci.yml"
     PROD_COMPOSE = "ci/compose/docker-compose.prod.yml"
 
+    // Production server details
     PROD_HOST = "34.235.165.176"
     PROD_USER = "ubuntu"
     PROD_DIR  = "/opt/couponfraud"
@@ -22,14 +24,17 @@ pipeline {
 
   stages {
     stage('Checkout') {
-      steps { checkout scm }
+      steps {
+        checkout scm
+      }
     }
 
     stage('Set TAG') {
       steps {
+        // Use git directly (reliable) instead of GIT_COMMIT env var (may be unset)
         sh '''#!/usr/bin/env sh
           set -eu
-          TAG=$(echo "$GIT_COMMIT" | cut -c1-7)
+          TAG=$(git rev-parse --short=7 HEAD)
           echo "$TAG" > .tag
           echo "TAG=$TAG"
         '''
@@ -41,6 +46,7 @@ pipeline {
         sh '''#!/usr/bin/env sh
           set -eu
           TAG=$(cat .tag)
+          echo "Building images with TAG=$TAG"
 
           docker build -f ci/docker/Dockerfile.api -t ${DOCKERHUB_API}:${TAG} .
           docker build -f ci/docker/Dockerfile.ml  -t ${DOCKERHUB_ML}:${TAG} .
@@ -53,6 +59,7 @@ pipeline {
       steps {
         sh '''#!/usr/bin/env sh
           set -eu
+
           chmod +x ci/scripts/wait-for-http.sh ci/scripts/smoke-test.sh
 
           docker compose -f ${CI_COMPOSE} down || true
@@ -63,10 +70,6 @@ pipeline {
 
           ci/scripts/wait-for-http.sh http://localhost:8081/ 60
           ci/scripts/smoke-test.sh
-
-          # NOTE:
-          # Do NOT bring down here if you want to access UI manually after pipeline starts.
-          # Cleanup is handled in post actions.
         '''
       }
     }
