@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   environment {
-    DOCKERHUB_USERNAME = "DOCKERHUB_USERNAME"
+    DOCKERHUB_USERNAME = "hsindhuja"
 
     DOCKERHUB_API = "${DOCKERHUB_USERNAME}/cfd-api"
     DOCKERHUB_ML  = "${DOCKERHUB_USERNAME}/cfd-ml"
@@ -12,7 +12,7 @@ pipeline {
     PROD_COMPOSE = "ci/compose/docker-compose.prod.yml"
 
     // Production server details
-    PROD_HOST = "YOUR_PROD_EC2_PUBLIC_IP"
+    PROD_HOST = "34.235.165.176"
     PROD_USER = "ubuntu"
     PROD_DIR  = "/opt/couponfraud"
   }
