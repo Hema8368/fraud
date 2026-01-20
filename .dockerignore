@@ -1,12 +1,8 @@
 **/node_modules
-**/.next
-**/dist
-**/build
-**/__pycache__
-**/.pytest_cache
 **/.venv
+**/__pycache__
+**/*.pyc
+.DS_Store
+__MACOSX
 .git
 .gitignore
-Dockerfile
-docker-compose*.yml
-ci/**/tmp
