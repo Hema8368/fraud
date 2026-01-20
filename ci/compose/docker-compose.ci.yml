@@ -1,29 +1,21 @@
 services:
   api:
-    build:
-      context: .
-      dockerfile: ci/docker/Dockerfile.api
-    container_name: cfd-api
+    image: yourdockerhub/cfd-api:${TAG}
     ports:
       - "5000:5000"
+    restart: always
 
   ml:
-    build:
-      context: .
-      dockerfile: ci/docker/Dockerfile.ml
-    container_name: cfd-ml
+    image: yourdockerhub/cfd-ml:${TAG}
     ports:
       - "8000:8000"
+    restart: always
 
-  tomcat-ui:
-    build:
-      context: .
-      dockerfile: ci/docker/Dockerfile.tomcat-ui
-      args:
-        APP_PATH: apps/checkout   # change to apps/admin if needed
-    container_name: cfd-tomcat-ui
+  ui:
+    image: yourdockerhub/cfd-ui:${TAG}
     ports:
-      - "8081:8080"              # IMPORTANT: Jenkins uses 8080, so Tomcat uses 8081
+      - "8081:8080"
     depends_on:
       - api
       - ml
+    restart: always
